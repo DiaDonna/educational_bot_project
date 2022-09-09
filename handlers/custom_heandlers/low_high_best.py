@@ -5,12 +5,14 @@ from keyboards.inline.need_photos import request_need_photos
 from loader import bot
 from states.lowprice_command import CommandState
 from telebot.types import Message, CallbackQuery
-
+from googletrans import Translator
 
 commands_text = {
     "lowrice": 'в каком городе будем искать самые дешевые отели?',
     "highprice": 'в каком городе будем искать самые дорогие отели?'
 }
+
+translator = Translator()
 
 
 @bot.message_handler(commands=['lowprice'])
@@ -21,7 +23,10 @@ def command(message: Message) -> None:
     bot.delete_state(message.from_user.id, message.chat.id)
     bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
     bot.send_message(message.from_user.id,
-                     f'{message.from_user.first_name}, {commands_text["lowrice"]}')
+                     f'{message.from_user.first_name}, {commands_text["lowrice"]}.'
+                     f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
+                     f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
+                     f'_так и на английском._', parse_mode='Markdown')
 
 
 @bot.message_handler(state=CommandState.city_to_search)
@@ -43,11 +48,22 @@ def get_city(message: Message) -> None:
 
     if correct_city:
         bot.set_state(message.from_user.id, CommandState.concretize_location, message.chat.id)
-        bot.send_message(message.from_user.id,
-                         'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
-                         reply_markup=request_location(message))
-        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-            data['city_name'] = message.text
+
+        if translator.translate(message.text).src == 'en':
+            bot.send_message(message.from_user.id,
+                             'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
+                             reply_markup=request_location(country=message.text,
+                                                           message=message))
+            with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+                data['city_name'] = translator.translate(message.text, dest='ru').text
+
+        else:
+            bot.send_message(message.from_user.id,
+                             'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
+                             reply_markup=request_location(country=translator.translate(message.text, dest='en').text,
+                                                           message=message))
+            with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+                data['city_name'] = message.text
 
     else:
         bot.send_message(message.from_user.id,
@@ -228,4 +244,4 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                               chat_id=call.message.chat.id,
                               text='*Хорошо, давай начнем сначала!*', parse_mode='Markdown')
         bot.send_message(call.from_user.id,
-                         f'{call.from_user.first_name}, в каком городе будем искать самые дешевые отели?')
+                         f'{call.from_user.first_name}, {commands_text["lowrice"]}')

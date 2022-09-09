@@ -1,12 +1,12 @@
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
 from hotel_requests import main_requests
 from loader import bot
 
 
-def request_location(message) -> InlineKeyboardMarkup:
+def request_location(country: str, message: Message) -> InlineKeyboardMarkup:
     keyboard = InlineKeyboardMarkup()
-    locations_dict = main_requests.location_search(message)
+    locations_dict = main_requests.location_search(country)
 
     for address, city_id in locations_dict.items():
         keyboard.add(InlineKeyboardButton(text=address, callback_data=city_id))

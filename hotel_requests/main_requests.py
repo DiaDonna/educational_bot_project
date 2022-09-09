@@ -2,7 +2,7 @@ import json
 import requests
 import re
 
-from telebot.types import Message
+from googletrans import Translator
 
 city_url = "https://hotels4.p.rapidapi.com/locations/v2/search"
 headers = {
@@ -10,15 +10,17 @@ headers = {
     "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
 }
 
+translator = Translator()
 
-def location_search(message: Message):
-    querystring = {"query": message.text, "locale": "en_US", "currency": "USD"}
+
+def location_search(country: str):
+    querystring = {"query": country, "locale": "en_US", "currency": "USD"}
     response = requests.request("GET", city_url, headers=headers, params=querystring)
     data = json.loads(response.text)
 
     variants_dict = dict()
     for item in data['suggestions'][0]['entities']:
         address = re.sub(r'(<(/?[^>]+)>)', '', item['caption'])
-        variants_dict[address] = item['destinationId']
+        variants_dict[translator.translate(address, dest='ru').text] = item['destinationId']
 
     return variants_dict
