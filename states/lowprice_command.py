@@ -7,5 +7,7 @@ class CommandState(StatesGroup):
     hotels_quantity = State()
     is_photos = State()
     photos_quantity = State()
+    arrival_date = State()
+    departure_date = State()
     the_end = State()
-    start_parsing = State()
+    searching = State()

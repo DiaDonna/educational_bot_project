@@ -1,17 +1,16 @@
-from keyboards.inline.confirmation import request_confirmation
-from keyboards.inline.locations import request_location
-from keyboards.reply.hotels_qnt import request_hotels_qnt
-from keyboards.inline.need_photos import request_need_photos
 from loader import bot
 from states.lowprice_command import CommandState
 from telebot.types import Message, CallbackQuery
+from keyboards.inline.confirmation import request_confirmation
+from keyboards.inline.locations import request_location
+from keyboards.reply.from_1_to_5 import request_quantity
+from keyboards.inline.need_photos import request_need_photos
 from googletrans import Translator
+from datetime import date, timedelta
+from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
-commands_text = {
-    "lowrice": 'в каком городе будем искать самые дешевые отели?',
-    "highprice": 'в каком городе будем искать самые дорогие отели?'
-}
 
+# объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
 
 
@@ -22,8 +21,24 @@ def command(message: Message) -> None:
 
     bot.delete_state(message.from_user.id, message.chat.id)
     bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
+
     bot.send_message(message.from_user.id,
-                     f'{message.from_user.first_name}, {commands_text["lowrice"]}.'
+                     f'{message.from_user.first_name}, в каком городе будем искать самые дешёвые отели?'
+                     f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
+                     f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
+                     f'_так и на английском._', parse_mode='Markdown')
+
+
+@bot.message_handler(commands=['highprice'])
+def command(message: Message) -> None:
+    """ Здесь ловим команду highprice, устанавливаем 1 состояние city_to_search,
+    и спрашиваем в каком городе будем искать """
+
+    bot.delete_state(message.from_user.id, message.chat.id)
+    bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
+
+    bot.send_message(message.from_user.id,
+                     f'{message.from_user.first_name}, в каком городе будем искать самые дорогие отели?'
                      f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
                      f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
                      f'_так и на английском._', parse_mode='Markdown')
@@ -55,7 +70,7 @@ def get_city(message: Message) -> None:
                              reply_markup=request_location(country=message.text,
                                                            message=message))
             with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data['city_name'] = translator.translate(message.text, dest='ru').text
+                data['city_name'] = translator.translate(message.text, dest='ru').text.capitalize()
 
         else:
             bot.send_message(message.from_user.id,
@@ -63,7 +78,7 @@ def get_city(message: Message) -> None:
                              reply_markup=request_location(country=translator.translate(message.text, dest='en').text,
                                                            message=message))
             with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data['city_name'] = message.text
+                data['city_name'] = message.text.capitalize()
 
     else:
         bot.send_message(message.from_user.id,
@@ -71,7 +86,12 @@ def get_city(message: Message) -> None:
                          '\n\nПопробуем еще раз!')
 
 
-@bot.message_handler(state=CommandState.concretize_location)
+@bot.message_handler(state=[CommandState.concretize_location,
+                            CommandState.is_photos,
+                            CommandState.arrival_date,
+                            CommandState.departure_date,
+                            CommandState.the_end,
+                            CommandState.searching])
 def control_manual_input(message: Message):
     """ Если пользователь вместо нажатия на кнопку inline-клавиатуры воспользовался ручным вводом, то попадаем сюда и
         ничего не происходит пока пользователь все-таки не нажмёт на кнопку """
@@ -105,7 +125,7 @@ def callback_query_get_location(call: CallbackQuery) -> None:
 
     bot.send_message(call.from_user.id,
                      'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
-                     reply_markup=request_hotels_qnt())
+                     reply_markup=request_quantity())
 
 
 @bot.message_handler(state=CommandState.hotels_quantity)
@@ -132,22 +152,14 @@ def get_quantity(message: Message) -> None:
         else:
             # если пользователь ввел вручную число, но оно либо меньше 1, либо больше 5
             bot.send_message(message.from_user.id,
-                             'Пожалуйста, нажмите на кнопку, не используя ручной ввод текста'
-                             '\nЛибо введите число от 1 до 5.')
+                             'Пожалуйста, нажми на кнопку, не используя ручной ввод текста'
+                             '\nЛибо введи число от 1 до 5.')
 
     except ValueError:
         # Если пользователь ввел вручную что угодно, кроме числа
         bot.send_message(message.from_user.id,
-                         'Пожалуйста, нажмите на кнопку, не используя ручной ввод текста'
-                         '\nЛибо введите число от 1 до 5.')
-
-
-@bot.message_handler(state=CommandState.is_photos)
-def control_manual_input(message: Message) -> None:
-    """ Если пользователь вместо нажатия на кнопку inline-клавиатуры воспользовался ручным вводом, то попадаем сюда и
-    ничего не происходит пока пользователь все-таки не нажмёт на кнопку """
-    if message:
-        pass
+                         'Пожалуйста, нажми на кнопку, не используя ручной ввод текста'
+                         '\nЛибо введи число от 1 до 5.')
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'Да' or call.data == 'Нет')
@@ -155,7 +167,7 @@ def callback_query_need_photos(call: CallbackQuery) -> None:
     """ Здесь ловим ответ пользователя с inline-клавиатуры (нужны фото отелей в подборке или нет),
     устанавливаем состояние в зависимости от ответа пользователя:
     - Если фото нужны, то устанавливаем состояние photos_quantity и спрашиваем сколько фото нужно вывести в подборке;
-    - Если не нужны, то устанавливаем состояние the_end, подводим итог и спрашиваем 'Все верно или начать заново?' """
+    - Если не нужны, то устанавливаем состояние arrival_date и уточняем дату заезда """
 
     with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
         data['is_photos'] = call.data
@@ -166,61 +178,133 @@ def callback_query_need_photos(call: CallbackQuery) -> None:
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text=f'Нужны ли фото отелей в подборке? \nТвой ответ: Да', )
-        bot.send_message(call.from_user.id, 'А сколько фото хочешь видеть в подборке? \nОтветь цифрой от 1 до 7')
+        bot.send_message(call.from_user.id, 'А сколько фото хочешь видеть в подборке? \nОтветь цифрой от 1 до 5',
+                         reply_markup=request_quantity())
 
     elif call.data == 'Нет':
-        bot.set_state(call.from_user.id, CommandState.the_end, call.message.chat.id)
+        bot.set_state(call.from_user.id, CommandState.arrival_date, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text='Нужны ли фото отелей в подборке? \nТвой ответ: Нет', )
-        bot.send_message(call.from_user.id,
-                         'Подведём итог!'
-                         f'\n\nИщем в городе: {data["city_name"]}'
-                         f'\nУточненное местоположение: {data["selected_address"]}'
-                         f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
-                         f'\nФото нужны: {data["is_photos"]}',
-                         reply_markup=request_confirmation())
+
+        calendar, step = DetailedTelegramCalendar(calendar_id=1, locale='ru', min_date=date.today()).build()
+        bot.send_message(call.message.chat.id,
+                         f"Выбери дату заезда ({translator.translate(LSTEP[step], dest='ru').text})",
+                         reply_markup=calendar)
 
 
 @bot.message_handler(state=CommandState.photos_quantity)
 def get_photos_qnt(message: Message) -> None:
     """  Здесь ловим ответ от пользователя (сколько фото по отелям), проверяем корректность,
-    устанавливаем состояние the_end и спрашиваем 'Все верно или начать заново?' """
+    устанавливаем состояние arrival_date и уточняем дату заезда """
 
     try:
         qnt = int(message.text)
 
-        if 0 < qnt < 8:
-            bot.set_state(message.from_user.id, CommandState.the_end, message.chat.id)
+        if 0 < qnt < 6:
+            bot.set_state(message.from_user.id, CommandState.arrival_date, message.chat.id)
 
             with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
                 data['photos_quantity'] = message.text
 
-            bot.send_message(message.from_user.id,
-                             'Подведём итог!'
-                             f'\n\nИщем в городе: {data["city_name"]}'
-                             f'\nУточненное местоположение: {data["selected_address"]}'
-                             f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
-                             f'\nФото нужны: {data["is_photos"]}'
-                             f'\nКоличество фото по каждому отелю: {data["photos_quantity"]}',
-                             reply_markup=request_confirmation())
+            calendar, step = DetailedTelegramCalendar(calendar_id=1, locale='ru', min_date=date.today()).build()
+            bot.send_message(message.chat.id,
+                             f"Выбери дату заезда ({translator.translate(LSTEP[step], dest='ru').text})",
+                             reply_markup=calendar)
 
         else:
             bot.send_message(message.from_user.id,
-                             'Пожалуйста, введи *число от 1 до 7*.', parse_mode='Markdown')
+                             'Пожалуйста, введи *число от 1 до 5* или просто нажми нужную кнопку.',
+                             parse_mode='Markdown')
 
     except ValueError:
         bot.send_message(message.from_user.id,
-                         'Чтобы я правильно тебя понял, отправь ответ *цифрой* от 1 до 7.', parse_mode='Markdown')
+                         'Чтобы я правильно тебя понял, отправь ответ *цифрой* или просто нажми нужную кнопку.',
+                         parse_mode='Markdown')
 
 
-@bot.message_handler(state=CommandState.the_end)
-def control_manual_input(message: Message):
-    """ Если пользователь вместо нажатия на кнопку inline-клавиатуры воспользовался ручным вводом, то попадаем сюда и
-        ничего не происходит пока пользователь все-таки не нажмёт на кнопку """
-    if message:
-        pass
+@bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1))
+def callback_query_arrival_date(call: CallbackQuery):
+    """ Здесь ловим ответ от пользователя (дата заезда), устанавливаем состояние departure_date
+    и уточняем дату выезда """
+
+    bot.set_state(call.from_user.id, CommandState.departure_date, call.message.chat.id)
+
+    result, key, step = DetailedTelegramCalendar(calendar_id=1,
+                                                 locale='ru',
+                                                 min_date=date.today()).process(call.data)
+    if not result and key:
+        bot.edit_message_text(f"Выбери дату заезда ({translator.translate(LSTEP[step], dest='ru').text})",
+                              call.message.chat.id,
+                              call.message.message_id,
+                              reply_markup=key)
+    elif result:
+        bot.edit_message_text(f"Выбранная дата заезда: {result.strftime('%d-%m-%Y')}",
+                              call.message.chat.id,
+                              call.message.message_id)
+        with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+            data["check_in"] = result
+            data["arrival_date"] = result.strftime('%d-%m-%Y')
+
+        correct_min_data = result + timedelta(days=1)
+        calendar, step = DetailedTelegramCalendar(calendar_id=2,
+                                                  locale='ru',
+                                                  min_date=correct_min_data).build()
+        bot.send_message(call.message.chat.id,
+                         f"Выбери дату выезда ({translator.translate(LSTEP[step], dest='ru').text})",
+                         reply_markup=calendar)
+
+
+@bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=2))
+def callback_query_departure_date(call: CallbackQuery):
+    """ Здесь ловим ответ от пользователя (дата выезда), устанавливаем состояние the_end, подводим итог
+    и спрашиваем пользователя: 'Всё верно или начать заново?' """
+
+    bot.set_state(call.from_user.id, CommandState.the_end, call.message.chat.id)
+
+    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+
+        correct_min_data = data["check_in"] + timedelta(days=1)
+        result, key, step = DetailedTelegramCalendar(calendar_id=2,
+                                                     locale='ru',
+                                                     min_date=correct_min_data).process(call.data)
+
+        if not result and key:
+            bot.edit_message_text(f"Выбери дату выезда ({translator.translate(LSTEP[step], dest='ru').text})",
+                                  call.message.chat.id,
+                                  call.message.message_id,
+                                  reply_markup=key)
+        elif result:
+            bot.edit_message_text(f"Выбранная дата выезда: {result.strftime('%d-%m-%Y')}",
+                                  call.message.chat.id,
+                                  call.message.message_id)
+            data["check_out"] = result
+            data["departure_date"] = result.strftime('%d-%m-%Y')
+            print(data)
+
+            if data["is_photos"] == 'Да':
+                bot.send_message(call.from_user.id,
+                                 'Подведём итог!'
+                                 f'\n\nИщем в городе: {data["city_name"]}'
+                                 f'\nУточненное местоположение: {data["selected_address"]}'
+                                 f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                 f'\nФото нужны: {data["is_photos"]}'
+                                 f'\nКоличество фото по каждому отелю: {data["photos_quantity"]}'
+                                 f'\nДата заезда: {data["arrival_date"]}'
+                                 f'\nДата выезда: {data["departure_date"]}',
+                                 reply_markup=request_confirmation())
+
+            elif data["is_photos"] == 'Нет':
+                bot.send_message(call.from_user.id,
+                                 'Подведём итог!'
+                                 f'\n\nИщем в городе: {data["city_name"]}'
+                                 f'\nУточненное местоположение: {data["selected_address"]}'
+                                 f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                 f'\nФото нужны: {data["is_photos"]}'
+                                 f'\nДата заезда: {data["arrival_date"]}'
+                                 f'\nДата выезда: {data["departure_date"]}',
+                                 reply_markup=request_confirmation())
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'Верно' or call.data == 'Заново')
@@ -230,6 +314,7 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
     - Если начать заново, то 'обнуляем' состояние пользователя """
 
     if call.data == 'Верно':
+        bot.set_state(call.from_user.id, CommandState.searching, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
@@ -243,5 +328,3 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text='*Хорошо, давай начнем сначала!*', parse_mode='Markdown')
-        bot.send_message(call.from_user.id,
-                         f'{call.from_user.first_name}, {commands_text["lowrice"]}')

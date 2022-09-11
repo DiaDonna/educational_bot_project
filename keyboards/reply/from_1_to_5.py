@@ -1,7 +1,7 @@
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-def request_hotels_qnt() -> ReplyKeyboardMarkup:
+def request_quantity() -> ReplyKeyboardMarkup:
 
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True,
                                    one_time_keyboard=True,
