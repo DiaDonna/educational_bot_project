@@ -1,3 +1,4 @@
+from hotel_requests import main_requests
 from loader import bot
 from states.lowprice_command import CommandState
 from telebot.types import Message, CallbackQuery
@@ -11,6 +12,19 @@ from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
+
+data_template = {
+    'city_name': 'название города',
+    'selected_address': 'уточненная локация',
+    'location_id': 'id локации',
+    'hotels_quantity': 'кол-во отелей',
+    'is_photos': ' фото: да/нет',
+    'photos_quantity': 'если да: кол-во фото',
+    'check_in': 'дата заезда (для запроса)',
+    'arrival_date': 'дата заезда (для пользователя)',
+    'check_out': 'дата выезда (для запроса)',
+    'departure_date': 'дата выезда (для пользователя)',
+}
 
 
 @bot.message_handler(commands=['lowprice'])
@@ -305,7 +319,6 @@ def callback_query_departure_date(call: CallbackQuery):
                                   call.message.message_id)
             data["check_out"] = result
             data["departure_date"] = result.strftime('%d-%m-%Y')
-            print(data)
 
             if data["is_photos"] == 'Да':
                 bot.send_message(call.from_user.id,
@@ -345,6 +358,21 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                               text=f'{call.message.text}.'
                                    f'\n\n*Отлично! Начинаю подготовку подборки...*',
                               parse_mode='Markdown')
+
+        with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+
+            results = main_requests.hotels_search(destination_id=data['location_id'],
+                                                  hotels_qnt=data['hotels_quantity'],
+                                                  check_in=data['check_in'].strftime('%Y-%m-%d'),
+                                                  check_out=data['check_out'].strftime('%Y-%m-%d'))
+
+            message = 'Я подобрал следующие варианты: \n\n'
+            for hotel_name, hotel_info in results.items():
+                for i_info in hotel_info.values():
+                    message += str(i_info) + '\n'
+                message += '\n'
+
+            bot.send_message(call.from_user.id, message)
 
     elif call.data == 'Заново':
         bot.set_state(call.from_user.id, CommandState.city_to_search)
