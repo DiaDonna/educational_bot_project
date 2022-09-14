@@ -9,7 +9,6 @@ from googletrans import Translator
 from datetime import date, timedelta
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
-
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
 
@@ -61,25 +60,50 @@ def get_city(message: Message) -> None:
                 correct_city = False
                 break
 
+    # если первичная проверка на корректность пройдена
     if correct_city:
         bot.set_state(message.from_user.id, CommandState.concretize_location, message.chat.id)
 
+        # если город был написан на английском
         if translator.translate(message.text).src == 'en':
-            bot.send_message(message.from_user.id,
-                             'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
-                             reply_markup=request_location(country=message.text,
-                                                           message=message))
-            with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data['city_name'] = translator.translate(message.text, dest='ru').text.capitalize()
+            keyboard = request_location(country=message.text, message=message)
 
+            # если такой город существует и возвращается клавиатура с вариантами локаций
+            if keyboard:
+                bot.send_message(message.from_user.id,
+                                 'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
+                                 reply_markup=keyboard)
+                with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+                    data['city_name'] = translator.translate(message.text, dest='ru').text.capitalize()
+
+            # если возвращается None, то просим заново ввести город
+            else:
+                bot.send_message(message.from_user.id,
+                                 'Я не нашёл подходящих вариантов по твоему запросу. '
+                                 'Попробуй заново ввести название города.')
+                bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
+
+        # если город был написан на русском
         else:
-            bot.send_message(message.from_user.id,
-                             'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
-                             reply_markup=request_location(country=translator.translate(message.text, dest='en').text,
-                                                           message=message))
-            with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data['city_name'] = message.text.capitalize()
+            keyboard = request_location(country=translator.translate(message.text, dest='en').text,
+                                        message=message)
 
+            # если возвращается клавиатура с вариантами локаций
+            if keyboard:
+                bot.send_message(message.from_user.id,
+                                 'Я нашел несколько подходящих вариантов. Выбери тот, который больше подходит:',
+                                 reply_markup=keyboard)
+                with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+                    data['city_name'] = message.text.capitalize()
+
+            # если возвращается None, то просим заново ввести город
+            else:
+                bot.send_message(message.from_user.id,
+                                 'Я не нашёл подходящих вариантов по твоему запросу. '
+                                 'Попробуй заново ввести название города.')
+                bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
+
+    # если пользователь ввел что-то не прошедшее проверку на корректность
     else:
         bot.send_message(message.from_user.id,
                          'Название города может содержать только буквы, а также знаки пробела или дефиса.'

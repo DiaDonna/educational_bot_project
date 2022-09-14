@@ -19,8 +19,14 @@ def location_search(country: str):
     data = json.loads(response.text)
 
     variants_dict = dict()
-    for item in data['suggestions'][0]['entities']:
-        address = re.sub(r'(<(/?[^>]+)>)', '', item['caption'])
-        variants_dict[translator.translate(address, dest='ru').text] = item['destinationId']
+    try:
+        for item in data['suggestions'][0]['entities']:
+            address = re.sub(r'(<(/?[^>]+)>)', '', item['caption'])
+            variants_dict[translator.translate(address, dest='ru').text] = item['destinationId']
 
-    return variants_dict
+        if len(variants_dict) == 0:
+            return None
+        return variants_dict
+
+    except TypeError:
+        pass
