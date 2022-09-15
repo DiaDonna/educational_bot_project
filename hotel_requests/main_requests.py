@@ -11,8 +11,9 @@ headers = {
     "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
 }
 
-city_url = "https://hotels4.p.rapidapi.com/locations/v2/search"   # для поиска локаций
-hotels_url = "https://hotels4.p.rapidapi.com/properties/list"     # для поиска отелей
+city_url = "https://hotels4.p.rapidapi.com/locations/v2/search"  # для поиска локаций
+hotels_url = "https://hotels4.p.rapidapi.com/properties/list"  # для поиска отелей
+photo_url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"  # для поиска фото
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
@@ -50,13 +51,30 @@ def hotels_search(destination_id: int, hotels_qnt: int, check_in, check_out):
         for i_dict in info['landmarks']:
             nearby += f"{i_dict['label']} - {i_dict['distance']}, "
 
-        hotels_dict[info['id']] = {
-            'name': '\N{hotel}' + info['name'],
-            'address': 'Адрес: ' + info['address']['streetAddress'],
-            'stars': '\N{glowing star}' + str(info['starRating']),
-            'rating': 'Рейтинг: ' + str(info['guestReviews']['rating']),
-            'per_night': 'Цена за ночь: ' + str(info['ratePlan']['price']['current']),
-            'nearby': f'Рядом: {nearby[:-2]}'
-        }
+        hotels_dict[info['id']] = f'\N{hotel} {info["name"]} ' \
+                                  f'\nАдрес: {info["address"]["streetAddress"]}' \
+                                  f'\n\N{glowing star} {str(info["starRating"])}' \
+                                  f'\nРейтинг: {str(info["guestReviews"]["rating"])}' \
+                                  f'\nЦена за ночь: {str(info["ratePlan"]["price"]["current"])}' \
+                                  f'\nРядом: {nearby[:-2]}\n'
 
     return hotels_dict
+
+
+def photos_search(hotel_id: int, photos_qnt: int):
+    querystring = {"id": hotel_id}
+    response = requests.request("GET", photo_url, headers=headers, params=querystring)
+    data = json.loads(response.text)
+
+    count = 0
+    photos_url_list = []
+    while count < photos_qnt:
+        if count == 0:
+            cur_photo_url = data['roomImages'][0]['images'][0]['baseUrl'].replace('{size}', 'y')
+            photos_url_list.append(cur_photo_url)
+        else:
+            cur_photo_url = data['hotelImages'][count]['baseUrl'].replace('{size}', 'y')
+            photos_url_list.append(cur_photo_url)
+        count += 1
+
+    return photos_url_list

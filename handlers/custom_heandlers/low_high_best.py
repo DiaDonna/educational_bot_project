@@ -1,7 +1,7 @@
 from hotel_requests import main_requests
 from loader import bot
 from states.lowprice_command import CommandState
-from telebot.types import Message, CallbackQuery
+from telebot.types import Message, CallbackQuery, InputMediaPhoto
 from keyboards.inline.confirmation import request_confirmation
 from keyboards.inline.locations import request_location
 from keyboards.reply.from_1_to_5 import request_quantity
@@ -244,7 +244,7 @@ def get_photos_qnt(message: Message) -> None:
             bot.set_state(message.from_user.id, CommandState.arrival_date, message.chat.id)
 
             with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
-                data['photos_quantity'] = message.text
+                data['photos_quantity'] = int(message.text)
 
             calendar, step = DetailedTelegramCalendar(calendar_id=1, locale='ru', min_date=date.today()).build()
             bot.send_message(message.chat.id,
@@ -361,18 +361,26 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
 
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
 
-            results = main_requests.hotels_search(destination_id=data['location_id'],
-                                                  hotels_qnt=data['hotels_quantity'],
-                                                  check_in=data['check_in'].strftime('%Y-%m-%d'),
-                                                  check_out=data['check_out'].strftime('%Y-%m-%d'))
+            hotels = main_requests.hotels_search(destination_id=data['location_id'],
+                                                 hotels_qnt=data['hotels_quantity'],
+                                                 check_in=data['check_in'].strftime('%Y-%m-%d'),
+                                                 check_out=data['check_out'].strftime('%Y-%m-%d'))
 
-            message = 'Я подобрал следующие варианты: \n\n'
-            for hotel_name, hotel_info in results.items():
-                for i_info in hotel_info.values():
-                    message += str(i_info) + '\n'
-                message += '\n'
+            count = 0
+            for hotel_id, hotel_info in hotels.items():
+                if data['is_photos'] == 'Да':
+                    photos_url = main_requests.photos_search(hotel_id=hotel_id, photos_qnt=data['photos_quantity'])
 
-            bot.send_message(call.from_user.id, message)
+                    media_group = list()
+                    for url in photos_url:
+                        media_group.append(InputMediaPhoto(media=url))
+
+                    bot.send_message(call.message.chat.id, hotel_info)
+                    bot.send_media_group(call.message.chat.id, media_group)
+
+                else:
+                    bot.send_message(call.message.chat.id, hotel_info)
+                count += 1
 
     elif call.data == 'Заново':
         bot.set_state(call.from_user.id, CommandState.city_to_search)
