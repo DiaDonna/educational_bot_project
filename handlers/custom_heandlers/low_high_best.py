@@ -14,12 +14,13 @@ from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 translator = Translator()
 
 data_template = {
+    'sort_order': 'параметр сортировки',
     'city_name': 'название города',
     'selected_address': 'уточненная локация',
     'location_id': 'id локации',
     'hotels_quantity': 'кол-во отелей',
-    'is_photos': ' фото: да/нет',
-    'photos_quantity': 'если да: кол-во фото',
+    'is_photos': ' фото: Да/Нет',
+    'photos_quantity': 'если Да: кол-во фото',
     'check_in': 'дата заезда (для запроса)',
     'arrival_date': 'дата заезда (для пользователя)',
     'check_out': 'дата выезда (для запроса)',
@@ -41,6 +42,9 @@ def command(message: Message) -> None:
                      f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
                      f'_так и на английском._', parse_mode='Markdown')
 
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        data['sort_order'] = 'PRICE'
+
 
 @bot.message_handler(commands=['highprice'])
 def command(message: Message) -> None:
@@ -55,6 +59,9 @@ def command(message: Message) -> None:
                      f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
                      f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
                      f'_так и на английском._', parse_mode='Markdown')
+
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        data['sort_order'] = 'PRICE_HIGHEST_FIRST'
 
 
 @bot.message_handler(state=CommandState.city_to_search)
@@ -364,7 +371,8 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
             hotels = main_requests.hotels_search(destination_id=data['location_id'],
                                                  hotels_qnt=data['hotels_quantity'],
                                                  check_in=data['check_in'].strftime('%Y-%m-%d'),
-                                                 check_out=data['check_out'].strftime('%Y-%m-%d'))
+                                                 check_out=data['check_out'].strftime('%Y-%m-%d'),
+                                                 sort_order=data['sort_order'])
 
             count = 0
             for hotel_id, hotel_info in hotels.items():

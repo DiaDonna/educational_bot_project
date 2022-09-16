@@ -38,9 +38,9 @@ def location_search(country: str):
         pass
 
 
-def hotels_search(destination_id: int, hotels_qnt: int, check_in, check_out):
+def hotels_search(destination_id: int, hotels_qnt: int, check_in: str, check_out: str, sort_order: str):
     querystring = {"destinationId": destination_id, "pageNumber": "1", "pageSize": hotels_qnt, "checkIn": check_in,
-                   "checkOut": check_out, "adults1": "1", "sortOrder": "PRICE", "locale": "ru_RU", "currency": "RUB"}
+                   "checkOut": check_out, "adults1": "1", "sortOrder": sort_order, "locale": "ru_RU", "currency": "RUB"}
     response = requests.request("GET", hotels_url, headers=headers, params=querystring)
     data = json.loads(response.text)
 
