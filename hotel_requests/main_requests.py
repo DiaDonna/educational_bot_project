@@ -7,7 +7,7 @@ from googletrans import Translator
 
 # для параметра headers в запросе
 headers = {
-    "X-RapidAPI-Key": "b5d40d9d17mshccf3e96f4a95378p1fe11cjsn8c7187ecc997",
+    "X-RapidAPI-Key": "088b8231c2msh7843f1ca13e9994p18788ajsnb33bd8a9d1d0",
     "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
 }
 
@@ -70,10 +70,10 @@ def photos_search(hotel_id: int, photos_qnt: int):
     photos_url_list = []
     while count < photos_qnt:
         if count == 0:
-            cur_photo_url = data['roomImages'][0]['images'][0]['baseUrl'].replace('{size}', 'y')
+            cur_photo_url = data['roomImages'][0]['images'][0]['baseUrl'].replace('{size}', 'w')
             photos_url_list.append(cur_photo_url)
         else:
-            cur_photo_url = data['hotelImages'][count]['baseUrl'].replace('{size}', 'y')
+            cur_photo_url = data['hotelImages'][count]['baseUrl'].replace('{size}', 'w')
             photos_url_list.append(cur_photo_url)
         count += 1
 

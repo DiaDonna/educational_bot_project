@@ -1,4 +1,7 @@
 from hotel_requests import main_requests
+from keyboards.inline.pagination_first import pagination_first
+from keyboards.inline.pagination_last import pagination_last
+from keyboards.inline.pagination_others import pagination_others
 from loader import bot
 from states.lowprice_command import CommandState
 from telebot.types import Message, CallbackQuery, InputMediaPhoto
@@ -9,6 +12,7 @@ from keyboards.inline.need_photos import request_need_photos
 from googletrans import Translator
 from datetime import date, timedelta
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+import json
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
@@ -374,17 +378,25 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                                  check_out=data['check_out'].strftime('%Y-%m-%d'),
                                                  sort_order=data['sort_order'])
 
-            count = 0
+            count = 1
             for hotel_id, hotel_info in hotels.items():
+                bot.send_message(call.message.chat.id,
+                                 text=f'*{count} вариант:*',
+                                 parse_mode='Markdown')
+
                 if data['is_photos'] == 'Да':
-                    photos_url = main_requests.photos_search(hotel_id=hotel_id, photos_qnt=data['photos_quantity'])
-
-                    media_group = list()
-                    for url in photos_url:
-                        media_group.append(InputMediaPhoto(media=url))
-
                     bot.send_message(call.message.chat.id, hotel_info)
-                    bot.send_media_group(call.message.chat.id, media_group)
+
+                    photos_url = main_requests.photos_search(hotel_id=hotel_id, photos_qnt=data['photos_quantity'])
+                    data[count] = [photos_url, hotel_id]
+                    bot.send_photo(call.message.chat.id,
+                                   photo=photos_url[0],
+                                   reply_markup=pagination_first(
+                                       count=data['photos_quantity'],
+                                       page=1,
+                                       hotel_info=count,
+                                       hotel_id=hotel_id),
+                                   allow_sending_without_reply=True)
 
                 else:
                     bot.send_message(call.message.chat.id, hotel_info)
@@ -396,3 +408,35 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text='*Хорошо, давай начнем сначала!*', parse_mode='Markdown')
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+
+    json_string = json.loads(call.data)
+    count = json_string['CountPage']
+    page = json_string['NumberPage']
+    hotel_info = json_string['HotelInfo']
+
+    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+        current_photos = data[hotel_info][0]
+        current_photo = InputMediaPhoto(media=current_photos[page - 1])
+
+        hotel_id = data[hotel_info][1]
+
+        if page == 1:
+            keyboard = pagination_first(count=count,
+                                        page=page,
+                                        hotel_info=hotel_info,
+                                        hotel_id=hotel_id)
+
+        elif page == count:
+            keyboard = pagination_last(count=count, page=page, hotel_info=hotel_info, hotel_id=hotel_id)
+
+        else:
+            keyboard = pagination_others(count=count, page=page, hotel_info=hotel_info, hotel_id=hotel_id)
+
+        bot.edit_message_media(media=current_photo,
+                               chat_id=call.message.chat.id,
+                               message_id=call.message.message_id,
+                               reply_markup=keyboard)
