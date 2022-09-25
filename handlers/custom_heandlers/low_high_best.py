@@ -8,6 +8,7 @@ from telebot.types import Message, CallbackQuery, InputMediaPhoto
 from keyboards.inline.confirmation import request_confirmation
 from keyboards.inline.locations import request_location
 from keyboards.reply.from_1_to_5 import request_quantity
+from keyboards.reply.from_3_to_10 import request_photos_quantity
 from keyboards.inline.need_photos import request_need_photos
 from googletrans import Translator
 from datetime import date, timedelta
@@ -148,33 +149,42 @@ def control_manual_input(message: Message):
         pass
 
 
-@bot.callback_query_handler(func=lambda call: call.data.isdigit() is True)
+@bot.callback_query_handler(func=lambda call: call.data.isdigit() is True or call.data == 'Другой город')
 def callback_query_get_location(call: CallbackQuery) -> None:
     """ Здесь ловим ответ с inline-клавиатуры (уточнение локации), устанавливаем 3 состояние hotels_quantity
      и спрашиваем какое кол-во отелей нужно вывести в подборке """
 
-    bot.set_state(call.from_user.id, CommandState.hotels_quantity, call.message.chat.id)
+    if call.data.isdigit():
 
-    with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
+        bot.set_state(call.from_user.id, CommandState.hotels_quantity, call.message.chat.id)
 
-        for address, loc_id in data['locations_dict'].items():
-            if loc_id == call.data:
-                selected_address = address
-                break
+        with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
 
-        data['selected_address'] = selected_address
-        data['location_id'] = call.data
-        data.pop('locations_dict')
+            for address, loc_id in data['locations_dict'].items():
+                if loc_id == call.data:
+                    selected_address = address
+                    break
 
-    bot.edit_message_text(message_id=call.message.message_id,
-                          inline_message_id=call.inline_message_id,
-                          chat_id=call.message.chat.id,
-                          text=f'{call.message.text[:-1]}.'
-                               f'\n\nТвой выбор: \n{selected_address}')
+            data['selected_address'] = selected_address
+            data['location_id'] = call.data
+            data.pop('locations_dict')
 
-    bot.send_message(call.from_user.id,
-                     'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
-                     reply_markup=request_quantity())
+        bot.edit_message_text(message_id=call.message.message_id,
+                              inline_message_id=call.inline_message_id,
+                              chat_id=call.message.chat.id,
+                              text=f'{call.message.text[:-1]}.'
+                                   f'\n\nТвой выбор: \n{selected_address}')
+
+        bot.send_message(call.from_user.id,
+                         'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
+                         reply_markup=request_quantity())
+
+    elif call.data == 'Другой город':
+        bot.set_state(call.from_user.id, CommandState.city_to_search, call.message.chat.id)
+        bot.edit_message_text(message_id=call.message.message_id,
+                              inline_message_id=call.inline_message_id,
+                              chat_id=call.message.chat.id,
+                              text=f'Хорошо, попробуй ввести название другого города.')
 
 
 @bot.message_handler(state=CommandState.hotels_quantity)
@@ -227,8 +237,8 @@ def callback_query_need_photos(call: CallbackQuery) -> None:
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text=f'Нужны ли фото отелей в подборке? \nТвой ответ: Да', )
-        bot.send_message(call.from_user.id, 'А сколько фото хочешь видеть в подборке? \nОтветь цифрой от 1 до 5',
-                         reply_markup=request_quantity())
+        bot.send_message(call.from_user.id, 'А сколько фото хочешь видеть в подборке? \nОтветь цифрой от 3 до 10',
+                         reply_markup=request_photos_quantity())
 
     elif call.data == 'Нет':
         bot.set_state(call.from_user.id, CommandState.arrival_date, call.message.chat.id)
@@ -251,7 +261,7 @@ def get_photos_qnt(message: Message) -> None:
     try:
         qnt = int(message.text)
 
-        if 0 < qnt < 6:
+        if 2 < qnt < 11:
             bot.set_state(message.from_user.id, CommandState.arrival_date, message.chat.id)
 
             with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
@@ -264,7 +274,7 @@ def get_photos_qnt(message: Message) -> None:
 
         else:
             bot.send_message(message.from_user.id,
-                             'Пожалуйста, введи *число от 1 до 5* или просто нажми нужную кнопку.',
+                             'Пожалуйста, введи *число от 3 до 10* или просто нажми нужную кнопку.',
                              parse_mode='Markdown')
 
     except ValueError:
@@ -402,17 +412,26 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                     bot.send_message(call.message.chat.id, hotel_info)
                 count += 1
 
+            bot.send_message(call.message.chat.id,
+                             'Это всё, что я нашел по твоим критериям.'
+                             '\n\nЕсли хочешь, чтобы я сделал для тебя новую подборку, '
+                             'выбери подходящую команду в меню ниже.',
+                             allow_sending_without_reply=True)
+
     elif call.data == 'Заново':
         bot.set_state(call.from_user.id, CommandState.city_to_search)
         bot.edit_message_text(message_id=call.message.message_id,
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
-                              text='*Хорошо, давай начнем сначала!*', parse_mode='Markdown')
+                              text='*Хорошо, давай начнем сначала!*'
+                                   '\nВ каком городе будем искать отели?'
+                                   f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
+                                   f'_Названия городов для поиска в других странах можно вводить как на русском языке,_'
+                                   f'_так и на английском._', parse_mode='Markdown')
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-
     json_string = json.loads(call.data)
     count = json_string['CountPage']
     page = json_string['NumberPage']

@@ -16,6 +16,9 @@ def request_location(country: str, message: Message) -> InlineKeyboardMarkup | N
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
             data['locations_dict'] = locations_dict
 
+        keyboard.add(InlineKeyboardButton(text='Мне ничего не подходит, хочу ввести город заново',
+                                          callback_data='Другой город'))
+
         return keyboard
 
     else:
