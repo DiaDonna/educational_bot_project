@@ -39,6 +39,7 @@ def location_search(country: str):
 
 
 def hotels_search(destination_id: int, hotels_qnt: int, check_in: str, check_out: str, sort_order: str):
+
     querystring = {"destinationId": destination_id, "pageNumber": "1", "pageSize": hotels_qnt, "checkIn": check_in,
                    "checkOut": check_out, "adults1": "1", "sortOrder": sort_order, "locale": "ru_RU", "currency": "RUB"}
     response = requests.request("GET", hotels_url, headers=headers, params=querystring)
@@ -57,6 +58,41 @@ def hotels_search(destination_id: int, hotels_qnt: int, check_in: str, check_out
                                   f'\nРейтинг: {str(info["guestReviews"]["rating"])}' \
                                   f'\nЦена за ночь: {str(info["ratePlan"]["price"]["current"])}' \
                                   f'\nРядом: {nearby[:-2]}\n'
+
+    return hotels_dict
+
+
+def hotels_search_bestdeal(destination_id: int, hotels_qnt: int, check_in: str, check_out: str, sort_order: str,
+                           price_min: int, price_max: int, max_distance: int):
+
+    querystring = {"destinationId": destination_id, "pageNumber": "1", "pageSize": "25", "checkIn": check_in,
+                   "checkOut": check_out, "adults1": "1", "priceMin": price_min, "priceMax": price_max,
+                   "sortOrder": sort_order, "locale": "ru_RU", "currency": "RUB"}
+    response = requests.request("GET", hotels_url, headers=headers, params=querystring)
+    data = json.loads(response.text)
+
+    hotels_dict = dict()
+    for info in data['data']['body']['searchResults']['results']:
+
+        # Если количество вариантов в словаре на данный момент уже равно кол-ву отелей, которое хотел пользователь, то
+        # прерываем цикл и возвращаем словарь с подходящими вариантами
+        if len(hotels_dict) < int(hotels_qnt):
+
+            # Если расстояние от центра города больше, чем хочет пользователь, то возвращаем словарь с вариантами,
+            # которые есть на данный момент (даже если он пустой)
+            if float(info['landmarks'][0]['distance'][:-3].replace(',', '.')) > max_distance:
+                break
+
+            # Иначе если с расстоянием все в норме, то проверяем вхождение в диапазон цен.
+            # Если проходим, то заносим вариант в словарь
+            elif price_min <= float(info["ratePlan"]["price"]["current"][:-4].replace(',', '')) <= price_max:
+
+                hotels_dict[info['id']] = f'\N{hotel} {info["name"]} ' \
+                                          f'\nАдрес: {info["address"]["streetAddress"]}' \
+                                          f'\n\N{glowing star} {str(info["starRating"])}' \
+                                          f'\nРейтинг: {str(info["guestReviews"]["rating"])}' \
+                                          f'\nЦена за ночь: {str(info["ratePlan"]["price"]["current"])}' \
+                                          f'\nРасстояние от центра города: {str(info["landmarks"][0]["distance"])}\n'
 
     return hotels_dict
 

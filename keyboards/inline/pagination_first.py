@@ -1,5 +1,4 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-from loader import bot
 
 
 def pagination_first(count: int, page: int, hotel_info: int, hotel_id: int) -> InlineKeyboardMarkup:

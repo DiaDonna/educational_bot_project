@@ -1,19 +1,23 @@
-from hotel_requests import main_requests
-from keyboards.inline.pagination_first import pagination_first
-from keyboards.inline.pagination_last import pagination_last
-from keyboards.inline.pagination_others import pagination_others
 from loader import bot
 from states.lowprice_command import CommandState
+from hotel_requests import main_requests
 from telebot.types import Message, CallbackQuery, InputMediaPhoto
-from keyboards.inline.confirmation import request_confirmation
-from keyboards.inline.locations import request_location
-from keyboards.reply.from_1_to_5 import request_quantity
-from keyboards.reply.from_3_to_10 import request_photos_quantity
-from keyboards.inline.need_photos import request_need_photos
 from googletrans import Translator
 from datetime import date, timedelta
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+
+from keyboards.inline.hotel_link import get_link
+from keyboards.inline.pagination_first import pagination_first
+from keyboards.inline.pagination_last import pagination_last
+from keyboards.inline.pagination_others import pagination_others
+from keyboards.inline.confirmation import request_confirmation
+from keyboards.inline.locations import request_location
+from keyboards.inline.need_photos import request_need_photos
+from keyboards.reply.from_1_to_5 import request_quantity
+from keyboards.reply.from_3_to_10 import request_photos_quantity
+
 import json
+
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
@@ -23,6 +27,9 @@ data_template = {
     'city_name': 'название города',
     'selected_address': 'уточненная локация',
     'location_id': 'id локации',
+    'distance': 'максимальное расстояние до центра города',
+    'price_min': 'минимальная цена за ночь',
+    'price_max': 'максимальная цена за ночь',
     'hotels_quantity': 'кол-во отелей',
     'is_photos': ' фото: Да/Нет',
     'photos_quantity': 'если Да: кол-во фото',
@@ -67,6 +74,25 @@ def command(message: Message) -> None:
 
     with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
         data['sort_order'] = 'PRICE_HIGHEST_FIRST'
+
+
+@bot.message_handler(commands=['bestdeal'])
+def command(message: Message) -> None:
+    """ Здесь ловим команду bestdeal, устанавливаем 1 состояние city_to_search,
+    и спрашиваем в каком городе будем искать """
+
+    bot.delete_state(message.from_user.id, message.chat.id)
+    bot.set_state(message.from_user.id, CommandState.city_to_search, message.chat.id)
+
+    bot.send_message(message.from_user.id,
+                     f'{message.from_user.first_name}, в каком городе будем искать отели по удаленности от центра '
+                     f'и диапазону цены?'
+                     f'\n\n _На данный момент поиск по территориям РФ и РБ недоступен._ '
+                     f'_Названия городов для поиска в других странах можно вводить как на русском языке,_ '
+                     f'_так и на английском._', parse_mode='Markdown')
+
+    with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+        data['sort_order'] = 'DISTANCE_FROM_LANDMARK'
 
 
 @bot.message_handler(state=CommandState.city_to_search)
@@ -151,12 +177,11 @@ def control_manual_input(message: Message):
 
 @bot.callback_query_handler(func=lambda call: call.data.isdigit() is True or call.data == 'Другой город')
 def callback_query_get_location(call: CallbackQuery) -> None:
-    """ Здесь ловим ответ с inline-клавиатуры (уточнение локации), устанавливаем 3 состояние hotels_quantity
-     и спрашиваем какое кол-во отелей нужно вывести в подборке """
+    """ Здесь ловим ответ с inline-клавиатуры (уточнение локации), устанавливаем состояние и задаем следующий вопрос
+     в зависимости от команды, сценарий которой проходит пользователь """
 
+    # Если ответ с инлайн-клавиатуры касался конкретной локации (т.е. в call.data лежит id выбранной локации)
     if call.data.isdigit():
-
-        bot.set_state(call.from_user.id, CommandState.hotels_quantity, call.message.chat.id)
 
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
 
@@ -169,22 +194,95 @@ def callback_query_get_location(call: CallbackQuery) -> None:
             data['location_id'] = call.data
             data.pop('locations_dict')
 
-        bot.edit_message_text(message_id=call.message.message_id,
-                              inline_message_id=call.inline_message_id,
-                              chat_id=call.message.chat.id,
-                              text=f'{call.message.text[:-1]}.'
-                                   f'\n\nТвой выбор: \n{selected_address}')
+            bot.edit_message_text(message_id=call.message.message_id,
+                                  inline_message_id=call.inline_message_id,
+                                  chat_id=call.message.chat.id,
+                                  text=f'{call.message.text[:-1]}.'
+                                       f'\n\nТвой выбор: \n{selected_address}')
 
-        bot.send_message(call.from_user.id,
-                         'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
-                         reply_markup=request_quantity())
+            # Если идет сценарий команды Lowprice или highprice, то устанавливаем состояние hotels_quantity и задаем
+            # вопрос о кол-ве отелей в подборке
+            if data['sort_order'] == 'PRICE_HIGHEST_FIRST' or data['sort_order'] == 'PRICE':
+                bot.set_state(call.from_user.id, CommandState.hotels_quantity, call.message.chat.id)
+                bot.send_message(call.from_user.id,
+                                 'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
+                                 reply_markup=request_quantity())
 
+            # Иначе если идет сценарий команды bestdeal, то устанавливаем состояние distance и задаем вопрос
+            # о максимальном расстоянии от центра города до отеля
+            elif data['sort_order'] == 'DISTANCE_FROM_LANDMARK':
+                bot.set_state(call.from_user.id, CommandState.distance, call.message.chat.id)
+                bot.send_message(call.message.chat.id,
+                                 'Отлично! На каком максимальном расстоянии от центра (в км) будем искать отели?'
+                                 '\n_В ответ напиши ЦЕЛОЕ число_', parse_mode='Markdown')
+
+    # Иначе если ответ с инлайн-клавиатуры НЕ локация, а вариант с повторным выбором города
     elif call.data == 'Другой город':
         bot.set_state(call.from_user.id, CommandState.city_to_search, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
                               inline_message_id=call.inline_message_id,
                               chat_id=call.message.chat.id,
                               text=f'Хорошо, попробуй ввести название другого города.')
+
+
+@bot.message_handler(state=CommandState.distance)
+def get_distance_from_city_center(message: Message) -> None:
+    """ Здесь ловим ответ от пользователя (на каком расстоянии от центра города искать отели),
+    устанавливаем состояние price_min и спрашиваем минимальную цену за ночь """
+
+    if message.text.isdigit() and int(message.text) > 0:
+        bot.set_state(message.from_user.id, CommandState.price_min, message.chat.id)
+        bot.send_message(message.from_user.id,
+                         'Хорошо. От какой цены за ночь искать отели?')
+
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data['distance'] = int(message.text)
+
+    else:
+        bot.send_message(message.from_user.id,
+                         'Я не понимаю, что ты имеешь в виду. Пожалуйста, напиши в ответ целое число больше 0.')
+
+
+@bot.message_handler(state=CommandState.price_min)
+def get_price_min(message: Message) -> None:
+    """ Здесь ловим ответ от пользователя (начальный диапазон цены за ночь в отеле),
+    устанавливаем состояние price_max и спрашиваем максимальную цену за ночь """
+
+    if message.text.isdigit() and int(message.text) > 0:
+        bot.set_state(message.from_user.id, CommandState.price_max, message.chat.id)
+        bot.send_message(message.from_user.id,
+                         'Хорошо. До какой цены за ночь искать отели?')
+
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            data['price_min'] = int(message.text)
+
+    else:
+        bot.send_message(message.from_user.id,
+                         'Я не понимаю, что ты имеешь в виду. Пожалуйста, напиши в ответ целое число.')
+
+
+@bot.message_handler(state=CommandState.price_max)
+def get_price_max(message: Message) -> None:
+    """ Здесь ловим ответ от пользователя (конечный диапазон цены за ночь в отеле),
+    устанавливаем состояние hotels_quantity и спрашиваем сколько отелей выводить в подборке """
+
+    if message.text.isdigit():
+        with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            if int(message.text) > data['price_min']:
+                bot.set_state(message.from_user.id, CommandState.hotels_quantity, message.chat.id)
+                bot.send_message(message.from_user.id,
+                                 'Отлично! Сколько отелей хочешь видеть в подборке? (не более 5)',
+                                 reply_markup=request_quantity())
+
+                data['price_max'] = int(message.text)
+
+            else:
+                bot.send_message(message.from_user.id,
+                                 'Цена максимум должна быть больше цены минимум.')
+    else:
+        bot.send_message(message.from_user.id,
+                         'Я не понимаю, что ты имеешь в виду. '
+                         'Пожалуйста, напиши в ответ целое число большее, чем начальный диапазон цены.')
 
 
 @bot.message_handler(state=CommandState.hotels_quantity)
@@ -341,28 +439,61 @@ def callback_query_departure_date(call: CallbackQuery):
             data["check_out"] = result
             data["departure_date"] = result.strftime('%d-%m-%Y')
 
-            if data["is_photos"] == 'Да':
-                bot.send_message(call.from_user.id,
-                                 'Подведём итог!'
-                                 f'\n\nИщем в городе: {data["city_name"]}'
-                                 f'\nУточненное местоположение: {data["selected_address"]}'
-                                 f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
-                                 f'\nФото нужны: {data["is_photos"]}'
-                                 f'\nКоличество фото по каждому отелю: {data["photos_quantity"]}'
-                                 f'\nДата заезда: {data["arrival_date"]}'
-                                 f'\nДата выезда: {data["departure_date"]}',
-                                 reply_markup=request_confirmation())
+            if data['sort_order'] == 'PRICE_HIGHEST_FIRST' or data['sort_order'] == 'PRICE':
 
-            elif data["is_photos"] == 'Нет':
-                bot.send_message(call.from_user.id,
-                                 'Подведём итог!'
-                                 f'\n\nИщем в городе: {data["city_name"]}'
-                                 f'\nУточненное местоположение: {data["selected_address"]}'
-                                 f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
-                                 f'\nФото нужны: {data["is_photos"]}'
-                                 f'\nДата заезда: {data["arrival_date"]}'
-                                 f'\nДата выезда: {data["departure_date"]}',
-                                 reply_markup=request_confirmation())
+                if data["is_photos"] == 'Да':
+                    bot.send_message(call.from_user.id,
+                                     'Подведём итог!'
+                                     f'\n\nИщем в городе: {data["city_name"]}'
+                                     f'\nУточненное местоположение: {data["selected_address"]}'
+                                     f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                     f'\nФото нужны: {data["is_photos"]}'
+                                     f'\nКоличество фото по каждому отелю: {data["photos_quantity"]}'
+                                     f'\nДата заезда: {data["arrival_date"]}'
+                                     f'\nДата выезда: {data["departure_date"]}',
+                                     reply_markup=request_confirmation())
+
+                elif data["is_photos"] == 'Нет':
+                    bot.send_message(call.from_user.id,
+                                     'Подведём итог!'
+                                     f'\n\nИщем в городе: {data["city_name"]}'
+                                     f'\nУточненное местоположение: {data["selected_address"]}'
+                                     f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                     f'\nФото нужны: {data["is_photos"]}'
+                                     f'\nДата заезда: {data["arrival_date"]}'
+                                     f'\nДата выезда: {data["departure_date"]}',
+                                     reply_markup=request_confirmation())
+
+            elif data['sort_order'] == 'DISTANCE_FROM_LANDMARK':
+
+                if data["is_photos"] == 'Да':
+                    bot.send_message(call.from_user.id,
+                                     'Подведём итог!'
+                                     f'\n\nИщем в городе: {data["city_name"]}'
+                                     f'\nУточненное местоположение: {data["selected_address"]}'
+                                     f'\nМаксимальное расстояние от центра: {data["distance"]}'
+                                     f'\nМинимальная цена за ночь: {data["price_min"]}'
+                                     f'\nМаксимальная цена за ночь: {data["price_max"]}'
+                                     f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                     f'\nФото нужны: {data["is_photos"]}'
+                                     f'\nКоличество фото по каждому отелю: {data["photos_quantity"]}'
+                                     f'\nДата заезда: {data["arrival_date"]}'
+                                     f'\nДата выезда: {data["departure_date"]}',
+                                     reply_markup=request_confirmation())
+
+                elif data["is_photos"] == 'Нет':
+                    bot.send_message(call.from_user.id,
+                                     'Подведём итог!'
+                                     f'\n\nИщем в городе: {data["city_name"]}'
+                                     f'\nУточненное местоположение: {data["selected_address"]}'
+                                     f'\nМаксимальное расстояние от центра: {data["distance"]}км'
+                                     f'\nМинимальная цена за ночь: {data["price_min"]}руб'
+                                     f'\nМаксимальная цена за ночь: {data["price_max"]}руб'
+                                     f'\nКоличество отелей в подборке: {data["hotels_quantity"]} '
+                                     f'\nФото нужны: {data["is_photos"]}'
+                                     f'\nДата заезда: {data["arrival_date"]}'
+                                     f'\nДата выезда: {data["departure_date"]}',
+                                     reply_markup=request_confirmation())
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'Верно' or call.data == 'Заново')
@@ -382,11 +513,22 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
 
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
 
-            hotels = main_requests.hotels_search(destination_id=data['location_id'],
-                                                 hotels_qnt=data['hotels_quantity'],
-                                                 check_in=data['check_in'].strftime('%Y-%m-%d'),
-                                                 check_out=data['check_out'].strftime('%Y-%m-%d'),
-                                                 sort_order=data['sort_order'])
+            if data['sort_order'] == 'PRICE_HIGHEST_FIRST' or data['sort_order'] == 'PRICE':
+                hotels = main_requests.hotels_search(destination_id=data['location_id'],
+                                                     hotels_qnt=data['hotels_quantity'],
+                                                     check_in=data['check_in'].strftime('%Y-%m-%d'),
+                                                     check_out=data['check_out'].strftime('%Y-%m-%d'),
+                                                     sort_order=data['sort_order'])
+
+            elif data['sort_order'] == 'DISTANCE_FROM_LANDMARK':
+                hotels = main_requests.hotels_search_bestdeal(destination_id=data['location_id'],
+                                                              hotels_qnt=data['hotels_quantity'],
+                                                              check_in=data['check_in'].strftime('%Y-%m-%d'),
+                                                              check_out=data['check_out'].strftime('%Y-%m-%d'),
+                                                              sort_order=data['sort_order'],
+                                                              price_min=data['price_min'],
+                                                              price_max=data['price_max'],
+                                                              max_distance=data['distance'])
 
             count = 1
             for hotel_id, hotel_info in hotels.items():
@@ -409,14 +551,23 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                    allow_sending_without_reply=True)
 
                 else:
-                    bot.send_message(call.message.chat.id, hotel_info)
+                    bot.send_message(call.message.chat.id,
+                                     hotel_info,
+                                     reply_markup=get_link(hotel_id=hotel_id))
                 count += 1
 
-            bot.send_message(call.message.chat.id,
-                             'Это всё, что я нашел по твоим критериям.'
-                             '\n\nЕсли хочешь, чтобы я сделал для тебя новую подборку, '
-                             'выбери подходящую команду в меню ниже.',
-                             allow_sending_without_reply=True)
+            if len(hotels) > 0:
+                bot.send_message(call.message.chat.id,
+                                 'Это всё, что я нашел по твоим критериям.'
+                                 '\n\nЕсли хочешь, чтобы я сделал для тебя новую подборку, '
+                                 'выбери подходящую команду в меню ниже.',
+                                 allow_sending_without_reply=True)
+            else:
+                bot.send_message(call.message.chat.id,
+                                 'Я не смог ничего подобрать по твоим критериям.'
+                                 '\n\nЕсли хочешь, чтобы я сделал для тебя другую подборку, '
+                                 'выбери подходящую команду в меню ниже.',
+                                 allow_sending_without_reply=True)
 
     elif call.data == 'Заново':
         bot.set_state(call.from_user.id, CommandState.city_to_search)
