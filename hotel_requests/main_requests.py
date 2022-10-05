@@ -14,6 +14,7 @@ headers = {
 city_url = "https://hotels4.p.rapidapi.com/locations/v2/search"  # для поиска локаций
 hotels_url = "https://hotels4.p.rapidapi.com/properties/list"  # для поиска отелей
 photo_url = "https://hotels4.p.rapidapi.com/properties/get-hotel-photos"  # для поиска фото
+details_url = "https://hotels4.p.rapidapi.com/properties/get-details"   # для уточнения координат отеля на карте
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
@@ -114,3 +115,15 @@ def photos_search(hotel_id: int, photos_qnt: int):
         count += 1
 
     return photos_url_list
+
+
+def coordinates_search(hotel_id: int, check_in: str, check_out: str):
+    querystring = {"id": hotel_id, "checkIn": check_in, "checkOut": check_out, "adults1": "1", "currency": "RUB",
+                   "locale": "ru_RU"}
+    response = requests.request("GET", details_url, headers=headers, params=querystring)
+    data = json.loads(response.text)
+
+    longitude: float = data['data']['body']['pdpHeader']['hotelLocation']['coordinates']['longitude']
+    latitude: float = data['data']['body']['pdpHeader']['hotelLocation']['coordinates']['latitude']
+
+    return longitude, latitude

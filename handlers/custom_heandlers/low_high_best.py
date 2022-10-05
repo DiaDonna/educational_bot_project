@@ -18,7 +18,6 @@ from keyboards.reply.from_3_to_10 import request_photos_quantity
 
 import json
 
-
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
 
@@ -532,12 +531,20 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
 
             count = 1
             for hotel_id, hotel_info in hotels.items():
+
+                longitude, latitude = main_requests.coordinates_search(
+                    hotel_id=hotel_id,
+                    check_in=data['check_in'].strftime('%Y-%m-%d'),
+                    check_out=data['check_out'].strftime('%Y-%m-%d'))
+
                 bot.send_message(call.message.chat.id,
                                  text=f'*{count} вариант:*',
                                  parse_mode='Markdown')
 
                 if data['is_photos'] == 'Да':
                     bot.send_message(call.message.chat.id, hotel_info)
+
+                    bot.send_location(call.message.chat.id, latitude=latitude, longitude=longitude)
 
                     photos_url = main_requests.photos_search(hotel_id=hotel_id, photos_qnt=data['photos_quantity'])
                     data[count] = [photos_url, hotel_id]
@@ -554,6 +561,8 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                     bot.send_message(call.message.chat.id,
                                      hotel_info,
                                      reply_markup=get_link(hotel_id=hotel_id))
+                    bot.send_location(call.message.chat.id, latitude=latitude, longitude=longitude)
+
                 count += 1
 
             if len(hotels) > 0:
