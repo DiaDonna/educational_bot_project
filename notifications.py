@@ -8,7 +8,7 @@ def notification(chat_id):
 
 
 def sending_notification(chat_id):
-    schedule.every().day.at("11:17").do(notification, chat_id)
+    schedule.every().day.at("12:00").do(notification, chat_id)
     while True:
         schedule.run_pending()
         time.sleep(1)
