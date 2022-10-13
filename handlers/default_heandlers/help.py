@@ -1,9 +1,10 @@
+from loader import bot
+from config_data.config import DEFAULT_COMMANDS
+
 from telebot.types import Message
 
-from config_data.config import DEFAULT_COMMANDS
-from loader import bot
 
-
+# Хендлер для команды help: вводит список кликабельных команд с описанием
 @bot.message_handler(commands=['help'])
 def bot_help(message: Message):
     text = [f'/{command} - {desk}' for command, desk in DEFAULT_COMMANDS]

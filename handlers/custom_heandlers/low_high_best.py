@@ -3,7 +3,7 @@ from states.lowprice_command import CommandState
 from hotel_requests import main_requests
 from telebot.types import Message, CallbackQuery, InputMediaPhoto
 from googletrans import Translator
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 
 from keyboards.inline.hotel_link import get_link
@@ -17,10 +17,13 @@ from keyboards.reply.from_1_to_5 import request_quantity
 from keyboards.reply.from_3_to_10 import request_photos_quantity
 
 import json
+import sqlite3
+
 
 # объект класса Translator из библиотеки googletrans для всех действий, касающихся перевода
 translator = Translator()
 
+# образец MemoryStorage, который заполняется в ходе прохождения пользователем сценария команды
 data_template = {
     'sort_order': 'параметр сортировки',
     'city_name': 'название города',
@@ -37,6 +40,11 @@ data_template = {
     'check_out': 'дата выезда (для запроса)',
     'departure_date': 'дата выезда (для пользователя)',
 }
+
+# создаем соединение с базой данных SQLite и возвращаем объект, представляющий ее
+conn = sqlite3.connect(r'database/database.db', check_same_thread=False)
+# создаем объект cursor для SQL-запросов к базе
+cur = conn.cursor()
 
 
 @bot.message_handler(commands=['lowprice'])
@@ -167,7 +175,7 @@ def get_city(message: Message) -> None:
                             CommandState.departure_date,
                             CommandState.the_end,
                             CommandState.searching])
-def control_manual_input(message: Message):
+def control_manual_input(message: Message) -> None:
     """ Если пользователь вместо нажатия на кнопку inline-клавиатуры воспользовался ручным вводом, то попадаем сюда и
         ничего не происходит пока пользователь все-таки не нажмёт на кнопку """
     if message:
@@ -226,9 +234,10 @@ def callback_query_get_location(call: CallbackQuery) -> None:
 
 @bot.message_handler(state=CommandState.distance)
 def get_distance_from_city_center(message: Message) -> None:
-    """ Здесь ловим ответ от пользователя (на каком расстоянии от центра города искать отели),
-    устанавливаем состояние price_min и спрашиваем минимальную цену за ночь """
+    """ Здесь ловим ответ от пользователя (на каком расстоянии от центра города искать отели по сценарию команды
+    bestdeal), устанавливаем состояние price_min и спрашиваем минимальную цену за ночь """
 
+    # если пользователь ввел целое число больше нуля
     if message.text.isdigit() and int(message.text) > 0:
         bot.set_state(message.from_user.id, CommandState.price_min, message.chat.id)
         bot.send_message(message.from_user.id,
@@ -244,9 +253,10 @@ def get_distance_from_city_center(message: Message) -> None:
 
 @bot.message_handler(state=CommandState.price_min)
 def get_price_min(message: Message) -> None:
-    """ Здесь ловим ответ от пользователя (начальный диапазон цены за ночь в отеле),
+    """ Здесь ловим ответ от пользователя (начальный диапазон цены за ночь в отеле по сценарию команды bestdeal),
     устанавливаем состояние price_max и спрашиваем максимальную цену за ночь """
 
+    # если пользователь ввел целое число больше нуля
     if message.text.isdigit() and int(message.text) > 0:
         bot.set_state(message.from_user.id, CommandState.price_max, message.chat.id)
         bot.send_message(message.from_user.id,
@@ -262,11 +272,14 @@ def get_price_min(message: Message) -> None:
 
 @bot.message_handler(state=CommandState.price_max)
 def get_price_max(message: Message) -> None:
-    """ Здесь ловим ответ от пользователя (конечный диапазон цены за ночь в отеле),
-    устанавливаем состояние hotels_quantity и спрашиваем сколько отелей выводить в подборке """
+    """ Здесь ловим ответ от пользователя (конечный диапазон цены за ночь в отеле по сценарию команды bestdeal),
+    устанавливаем состояние hotels_quantity (переход к однотипной части сценариев команд low/high/best) и спрашиваем
+    сколько отелей выводить в подборке """
 
+    # если пользователь ввел число
     if message.text.isdigit():
         with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
+            # и если максимальная цена не ниже минимальной цены
             if int(message.text) > data['price_min']:
                 bot.set_state(message.from_user.id, CommandState.hotels_quantity, message.chat.id)
                 bot.send_message(message.from_user.id,
@@ -275,9 +288,12 @@ def get_price_max(message: Message) -> None:
 
                 data['price_max'] = int(message.text)
 
+            # если максимальная цена ниже минимальной, то ожидаем корректный ввод
             else:
                 bot.send_message(message.from_user.id,
                                  'Цена максимум должна быть больше цены минимум.')
+
+    # иначе если пользователь ввел НЕ число, то ожидаем корректный ввод
     else:
         bot.send_message(message.from_user.id,
                          'Я не понимаю, что ты имеешь в виду. '
@@ -311,8 +327,8 @@ def get_quantity(message: Message) -> None:
                              'Пожалуйста, нажми на кнопку, не используя ручной ввод текста'
                              '\nЛибо введи число от 1 до 5.')
 
+    # Если пользователь ввел вручную что угодно, кроме числа
     except ValueError:
-        # Если пользователь ввел вручную что угодно, кроме числа
         bot.send_message(message.from_user.id,
                          'Пожалуйста, нажми на кнопку, не используя ручной ввод текста'
                          '\nЛибо введи число от 1 до 5.')
@@ -328,6 +344,7 @@ def callback_query_need_photos(call: CallbackQuery) -> None:
     with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
         data['is_photos'] = call.data
 
+    # если фото нужны
     if call.data == 'Да':
         bot.set_state(call.from_user.id, CommandState.photos_quantity, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
@@ -337,6 +354,7 @@ def callback_query_need_photos(call: CallbackQuery) -> None:
         bot.send_message(call.from_user.id, 'А сколько фото хочешь видеть в подборке? \nОтветь цифрой от 3 до 10',
                          reply_markup=request_photos_quantity())
 
+    # иначе если фото не нужны
     elif call.data == 'Нет':
         bot.set_state(call.from_user.id, CommandState.arrival_date, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
@@ -355,9 +373,12 @@ def get_photos_qnt(message: Message) -> None:
     """  Здесь ловим ответ от пользователя (сколько фото по отелям), проверяем корректность,
     устанавливаем состояние arrival_date и уточняем дату заезда """
 
+    # Пробуем преобразовать введенный пользователем текст к типу int, чтобы проверить корректность введенных данных
+    # по двум критериям: число (int) и диапазон от 3 до 10 включительно.
     try:
         qnt = int(message.text)
 
+        # Если пользователь ввёл вручную либо с помощью reply-клавиатуры число в диапазоне от 3 до 10 включительно
         if 2 < qnt < 11:
             bot.set_state(message.from_user.id, CommandState.arrival_date, message.chat.id)
 
@@ -369,11 +390,13 @@ def get_photos_qnt(message: Message) -> None:
                              f"Выбери дату заезда ({translator.translate(LSTEP[step], dest='ru').text})",
                              reply_markup=calendar)
 
+        # если пользователь ввел вручную число, но оно либо меньше 3, либо больше 10
         else:
             bot.send_message(message.from_user.id,
                              'Пожалуйста, введи *число от 3 до 10* или просто нажми нужную кнопку.',
                              parse_mode='Markdown')
 
+    # Если пользователь ввел вручную что угодно, кроме числа
     except ValueError:
         bot.send_message(message.from_user.id,
                          'Чтобы я правильно тебя понял, отправь ответ *цифрой* или просто нажми нужную кнопку.',
@@ -381,7 +404,7 @@ def get_photos_qnt(message: Message) -> None:
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1))
-def callback_query_arrival_date(call: CallbackQuery):
+def callback_query_arrival_date(call: CallbackQuery) -> None:
     """ Здесь ловим ответ от пользователя (дата заезда), устанавливаем состояние departure_date
     и уточняем дату выезда """
 
@@ -413,9 +436,9 @@ def callback_query_arrival_date(call: CallbackQuery):
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=2))
-def callback_query_departure_date(call: CallbackQuery):
-    """ Здесь ловим ответ от пользователя (дата выезда), устанавливаем состояние the_end, подводим итог
-    и спрашиваем пользователя: 'Всё верно или начать заново?' """
+def callback_query_departure_date(call: CallbackQuery) -> None:
+    """ Здесь ловим ответ от пользователя (дата выезда), устанавливаем состояние the_end, подводим итог в зависимости от
+    сценария команды и нужности фото отелей; и спрашиваем пользователя: 'Всё верно или начать заново?' """
 
     bot.set_state(call.from_user.id, CommandState.the_end, call.message.chat.id)
 
@@ -438,6 +461,7 @@ def callback_query_departure_date(call: CallbackQuery):
             data["check_out"] = result
             data["departure_date"] = result.strftime('%d-%m-%Y')
 
+            # подведение итогов для команд lowprice или higprice
             if data['sort_order'] == 'PRICE_HIGHEST_FIRST' or data['sort_order'] == 'PRICE':
 
                 if data["is_photos"] == 'Да':
@@ -463,6 +487,7 @@ def callback_query_departure_date(call: CallbackQuery):
                                      f'\nДата выезда: {data["departure_date"]}',
                                      reply_markup=request_confirmation())
 
+            # подведение итогов для команды bestdeal
             elif data['sort_order'] == 'DISTANCE_FROM_LANDMARK':
 
                 if data["is_photos"] == 'Да':
@@ -501,6 +526,7 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
     - Если все верно, то готовим подборку
     - Если начать заново, то 'обнуляем' состояние пользователя """
 
+    # если пользователь подтверждает критерии поиска
     if call.data == 'Верно':
         bot.set_state(call.from_user.id, CommandState.searching, call.message.chat.id)
         bot.edit_message_text(message_id=call.message.message_id,
@@ -512,14 +538,21 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
 
         with bot.retrieve_data(call.from_user.id, call.message.chat.id) as data:
 
+            command_for_database = ''  # описание команды для БД
             if data['sort_order'] == 'PRICE_HIGHEST_FIRST' or data['sort_order'] == 'PRICE':
+                # запрос к API на подборку отелей по критериям (сценарий команды lowprice или highprice)
                 hotels = main_requests.hotels_search(destination_id=data['location_id'],
                                                      hotels_qnt=data['hotels_quantity'],
                                                      check_in=data['check_in'].strftime('%Y-%m-%d'),
                                                      check_out=data['check_out'].strftime('%Y-%m-%d'),
                                                      sort_order=data['sort_order'])
+                if data['sort_order'] == 'PRICE_HIGHEST_FIRST':
+                    command_for_database += 'Самые дорогие отели'
+                else:
+                    command_for_database += 'Самые дешёвые отели'
 
             elif data['sort_order'] == 'DISTANCE_FROM_LANDMARK':
+                # запрос к API на подборку отелей по критериям (сценарий команды bestdeal)
                 hotels = main_requests.hotels_search_bestdeal(destination_id=data['location_id'],
                                                               hotels_qnt=data['hotels_quantity'],
                                                               check_in=data['check_in'].strftime('%Y-%m-%d'),
@@ -528,9 +561,13 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                                               price_min=data['price_min'],
                                                               price_max=data['price_max'],
                                                               max_distance=data['distance'])
+                command_for_database += 'Отели, подходящие по расстоянию от центра и цене'
 
+            hotels_for_database = ''  # описание всех найденных отелей для БД
             count = 1
             for hotel_id, hotel_info in hotels.items():
+
+                hotels_for_database += str(count) + '. ' + hotel_info
 
                 longitude, latitude = main_requests.coordinates_search(
                     hotel_id=hotel_id,
@@ -541,6 +578,8 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                  text=f'*{count} вариант:*',
                                  parse_mode='Markdown')
 
+                # если пользователю нужны фото, то помимо описания отеля, геолокации и ссылки на отель,
+                # отправляем подборку фото с помощью пагинации
                 if data['is_photos'] == 'Да':
                     bot.send_message(call.message.chat.id, hotel_info)
 
@@ -557,20 +596,36 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                        hotel_id=hotel_id),
                                    allow_sending_without_reply=True)
 
+                # иначе если фото не нужны, то отправляем только описание отеля, геолокацию и ссылку на отель
                 else:
                     bot.send_message(call.message.chat.id,
                                      hotel_info,
                                      reply_markup=get_link(hotel_id=hotel_id))
                     bot.send_location(call.message.chat.id, latitude=latitude, longitude=longitude)
 
+                hotels_for_database += '\n\n'
                 count += 1
 
+            location_for_database = data['selected_address']  # название точной локации поиска для БД
+
+            # если количество отелей в подборке было больше нуля, то выводим это конечное сообщение и вносим инф-ю в БД
             if len(hotels) > 0:
                 bot.send_message(call.message.chat.id,
                                  'Это всё, что я нашел по твоим критериям.'
                                  '\n\nЕсли хочешь, чтобы я сделал для тебя новую подборку, '
                                  'выбери подходящую команду в меню ниже.',
                                  allow_sending_without_reply=True)
+
+                # вносим информацию в базу данных
+                cur.execute('INSERT INTO history (user_id, datetime, command, location, hotels) VALUES (?, ?, ?, ?, ?)',
+                            (call.from_user.id,
+                             datetime.now(),
+                             command_for_database,
+                             location_for_database,
+                             hotels_for_database))
+                conn.commit()
+
+            # иначе если отелей по таким критерия не нашлось, то выводим это конечное сообщение
             else:
                 bot.send_message(call.message.chat.id,
                                  'Я не смог ничего подобрать по твоим критериям.'
@@ -578,6 +633,7 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                  'выбери подходящую команду в меню ниже.',
                                  allow_sending_without_reply=True)
 
+    # если пользователь не подтверждает критерии поиска и хочет начать заново ту же команду
     elif call.data == 'Заново':
         bot.set_state(call.from_user.id, CommandState.city_to_search)
         bot.edit_message_text(message_id=call.message.message_id,
@@ -590,8 +646,15 @@ def callback_query_get_confirmation(call: CallbackQuery) -> None:
                                    f'_так и на английском._', parse_mode='Markdown')
 
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith('{"NumberPage"'))
+def callback_query_pagination(call: CallbackQuery) -> None:
+    """ Здесь ловим нажатие на кнопки inline-клавиатур с фото-пагинацией. В call.data лежит JSON строка
+    со следующим содержимым:
+    1) номер страницы(номер фото, которое сейчас на главной странице);
+    2) общее количество фото в подборке;
+    3) идентификационный номер отеля, чтобы вытащить из MemoryStorage необходимую информацию (которая не влезает
+    в call.data по размеру самостоятельно)"""
+
     json_string = json.loads(call.data)
     count = json_string['CountPage']
     page = json_string['NumberPage']

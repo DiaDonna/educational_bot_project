@@ -1,10 +1,21 @@
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
-from hotel_requests import main_requests
 from loader import bot
+from hotel_requests import main_requests
 
 
 def request_location(country: str, message: Message) -> InlineKeyboardMarkup | None:
+    """
+    Клавиатура с вариантами локаций
+
+    :param country: название города для API запроса на поиск приближенных локаций;
+    :param message: объект Message
+
+    :return: Клавиатура, где каждая инлайн-кнопка это найденная приближенная локация
+             ИЛИ None, если локаций не найдено
+
+    """
+
     keyboard = InlineKeyboardMarkup()
     locations_dict = main_requests.location_search(country)
 

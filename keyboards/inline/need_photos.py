@@ -2,6 +2,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def request_need_photos() -> InlineKeyboardMarkup:
+    """ Клавиатура подтверждения необходимости вывода фото в подборке по каждому отелю (Да/Нет) """
+
     keyboard = InlineKeyboardMarkup()
 
     button1 = InlineKeyboardButton(text='Да', callback_data='Да')
